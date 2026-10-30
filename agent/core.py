@@ -32,7 +32,7 @@ class AgentExecutor:
 
     def run(self, query, verbose=False):
         messages = [{"role": "user", "content": query}]
-        trace, seen, nudges, sched_nudges = [], {}, 0, 0
+        trace, seen, nudges, sched_nudges, sol_nudges = [], {}, 0, 0, 0
         for step in range(self.max_iterations):
             force_final = any(n > config.MAX_SAME_TOOL_CALLS for n in seen.values())
             if force_final:
@@ -59,6 +59,12 @@ class AgentExecutor:
                 sched_nudges += 1
                 messages += [{"role": "assistant", "content": json.dumps(data)},
                              {"role": "user", "content": "Rejected: for a plan you must call curriculum_lookup with ALL weak topics, then make_schedule with the topics ordered weakest first, and copy the schedule from its observation."}]
+                continue
+            if ("final_answer" in data and "check_code" in called and sol_nudges < 1
+                and "def " in str(data["final_answer"])):
+                sol_nudges += 1
+                messages += [{"role": "assistant", "content": json.dumps(data)},
+                             {"role": "user", "content": "Rejected: do not include a full code solution. Explain the cause of the failure and give hints only, so the student fixes it themselves."}]
                 continue
             if "final_answer" in data:
                 if verbose:
