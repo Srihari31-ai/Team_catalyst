@@ -14,5 +14,6 @@ def build_tools():
     from tools.calculator import Calculator
     from tools.data_query import ListFiles, ReadFile, SqlQuery
     from tools.web_search import WebSearch
-    tools = [ListFiles(), ReadFile(), SqlQuery(), Calculator(), WebSearch()]
+    from tools.weak_topics import WeakTopics
+    tools = [ListFiles(), ReadFile(), SqlQuery(), Calculator(), WebSearch(), WeakTopics()]
     return {t.name: t for t in tools}

@@ -32,7 +32,7 @@ class AgentExecutor:
 
     def run(self, query, verbose=False):
         messages = [{"role": "user", "content": query}]
-        trace, seen, nudged = [], {}, False
+        trace, seen, nudges = [], {}, 0
         for step in range(self.max_iterations):
             force_final = any(n > config.MAX_SAME_TOOL_CALLS for n in seen.values())
             if force_final:
@@ -44,11 +44,14 @@ class AgentExecutor:
                              {"role": "user", "content": "Invalid format. Reply with ONE JSON object with an \"action\" or a \"final_answer\"."}]
                 continue
             thought = str(data.get("thought", ""))
-            if "final_answer" in data and not trace and not nudged:
-                nudged = True  # an agent must ground its answer in at least one tool result
-                messages += [{"role": "assistant", "content": json.dumps(data)},
-                             {"role": "user", "content": "Do not answer from memory. Call list_files, then read the data with a tool first."}]
-                continue
+            grounded = any(not t["observation"].startswith("ERROR") for t in trace)
+            if "final_answer" in data and not grounded:
+                nudges += 1
+                if nudges <= 3:
+                    messages += [{"role": "assistant", "content": json.dumps(data)},
+                                 {"role": "user", "content": "Rejected: you have not read any data yet. Call a tool now. Valid tool names: " + ", ".join(self.tools)}]
+                    continue
+                return "I could not read any data with the tools, so I cannot give a reliable answer.", trace
             if "final_answer" in data:
                 if verbose:
                     print(f"[Thought] {thought}\n[Final] {data['final_answer']}")
