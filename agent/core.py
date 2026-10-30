@@ -77,6 +77,8 @@ class AgentExecutor:
 
     def _call_tool(self, name, args):
         name = {"open_file": "read_file", "read_csv": "read_file"}.get(name, name)
+        if "placeholder" in json.dumps(args, default=str).lower():
+               return "ERROR: placeholder value. Use real values taken from earlier observations."
         tool = self.tools.get(name)
         if tool is None:
             return f"ERROR: unknown tool '{name}'. Available: {', '.join(self.tools)}"

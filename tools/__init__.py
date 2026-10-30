@@ -16,5 +16,6 @@ def build_tools():
     from tools.web_search import WebSearch
     from tools.weak_topics import WeakTopics
     from tools.study_tools import CurriculumLookup, MakeSchedule
-    tools = [ListFiles(), ReadFile(), SqlQuery(), Calculator(), WebSearch(), WeakTopics(), CurriculumLookup(), MakeSchedule()]
+    from tools.code_sandbox import GenerateProblem, CheckCode
+    tools = [ListFiles(), ReadFile(), SqlQuery(), Calculator(), WebSearch(), WeakTopics(), CurriculumLookup(), MakeSchedule(), GenerateProblem(), CheckCode()]
     return {t.name: t for t in tools}
