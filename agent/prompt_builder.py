@@ -27,8 +27,9 @@ Rules:
 - If a tool returns ERROR or no data, say so honestly in the final answer; do not invent values.
 - If you have repeated the same tool twice, synthesize a final answer with the data you have,- Tool names are exact. The only valid names are the ones listed above. To read a file use read_file, never open_file.
 - For weak topics, scores or study plans, call weak_topics with the student id right after list_files.
-- Every topic name and number in your final_answer must appear in a tool Observation. Never invent topics, scores or placeholders like Topic A.
-"""
+- Every topic name and number in your final_answer must appear in a tool Observation. Never invent topics, scores or placeholders like Topic A,- For a study plan, call weak_topics first, then curriculum_lookup on the weakest topics, then make_schedule with those topics ordered weakest first. Copy the schedule from make_schedule into your final_answer.
+- Never pass placeholder or example values like PLACEHOLDER to a tool. Only use topic names that appeared in a weak_topics observation,- Call curriculum_lookup ONCE with ALL topics from weak_topics, comma-separated, not just the weakest one.
+- Notes and practice problems in your final_answer must come from curriculum_lookup observations. Do not add your own. The schedule must be copied from the make_schedule observation, not written by you."""
 
 
 def build_system_prompt(tools, role=ROLE):

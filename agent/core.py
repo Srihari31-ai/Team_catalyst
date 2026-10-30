@@ -32,7 +32,7 @@ class AgentExecutor:
 
     def run(self, query, verbose=False):
         messages = [{"role": "user", "content": query}]
-        trace, seen, nudges = [], {}, 0
+        trace, seen, nudges, sched_nudges = [], {}, 0, 0
         for step in range(self.max_iterations):
             force_final = any(n > config.MAX_SAME_TOOL_CALLS for n in seen.values())
             if force_final:
@@ -52,6 +52,14 @@ class AgentExecutor:
                                  {"role": "user", "content": "Rejected: you have not read any data yet. Call a tool now. Valid tool names: " + ", ".join(self.tools)}]
                     continue
                 return "I could not read any data with the tools, so I cannot give a reliable answer.", trace
+            called = {t["tool"] for t in trace}
+            wants_plan = any(w in query.lower() for w in ("plan", "schedule"))
+            if ("final_answer" in data and wants_plan and "make_schedule" in self.tools
+                    and "make_schedule" not in called and sched_nudges < 2):
+                sched_nudges += 1
+                messages += [{"role": "assistant", "content": json.dumps(data)},
+                             {"role": "user", "content": "Rejected: for a plan you must call curriculum_lookup with ALL weak topics, then make_schedule with the topics ordered weakest first, and copy the schedule from its observation."}]
+                continue
             if "final_answer" in data:
                 if verbose:
                     print(f"[Thought] {thought}\n[Final] {data['final_answer']}")
@@ -68,6 +76,7 @@ class AgentExecutor:
         return self._wrap_up(messages), trace
 
     def _call_tool(self, name, args):
+        name = {"open_file": "read_file", "read_csv": "read_file"}.get(name, name)
         tool = self.tools.get(name)
         if tool is None:
             return f"ERROR: unknown tool '{name}'. Available: {', '.join(self.tools)}"
