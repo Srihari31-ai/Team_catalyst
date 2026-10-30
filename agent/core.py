@@ -44,12 +44,14 @@ class AgentExecutor:
                              {"role": "user", "content": "Invalid format. Reply with ONE JSON object with an \"action\" or a \"final_answer\"."}]
                 continue
             thought = str(data.get("thought", ""))
-            grounded = any(not t["observation"].startswith("ERROR") for t in trace)
+            grounded = any(t["tool"] != "list_files" and not t["observation"].startswith("ERROR") for t in trace)
             if "final_answer" in data and not grounded:
                 nudges += 1
-                if nudges <= 3:
+                if nudges <= 2:
                     messages += [{"role": "assistant", "content": json.dumps(data)},
-                                 {"role": "user", "content": "Rejected: you have not read any data yet. Call a tool now. Valid tool names: " + ", ".join(self.tools)}]
+                                 {"role": "user", "content": "Rejected: you have not read any data yet. Call read_file on a data file (list_files shows the names) or weak_topics now. Valid tool names: " + ", ".join(self.tools)}]
+                    continue
+                if nudges == 3 and self._auto_ground(trace, messages, verbose):
                     continue
                 return "I could not read any data with the tools, so I cannot give a reliable answer.", trace
             called = {t["tool"] for t in trace}
@@ -61,7 +63,7 @@ class AgentExecutor:
                              {"role": "user", "content": "Rejected: for a plan you must call curriculum_lookup with ALL weak topics, then make_schedule with the topics ordered weakest first, and copy the schedule from its observation."}]
                 continue
             if ("final_answer" in data and "check_code" in called and sol_nudges < 1
-                and "def " in str(data["final_answer"])):
+                    and "def " in str(data["final_answer"])):
                 sol_nudges += 1
                 messages += [{"role": "assistant", "content": json.dumps(data)},
                              {"role": "user", "content": "Rejected: do not include a full code solution. Explain the cause of the failure and give hints only, so the student fixes it themselves."}]
@@ -81,10 +83,29 @@ class AgentExecutor:
                          {"role": "user", "content": f"OBSERVATION: {observation}"}]
         return self._wrap_up(messages), trace
 
+    def _auto_ground(self, trace, messages, verbose=False):
+        """Guardrail recovery: read the first data file ourselves so the answer is grounded in real data."""
+        listing = self._call_tool("list_files", {})
+        names = [f.strip() for f in re.split(r"[\n,]", listing)
+                 if f.strip().lower().endswith((".csv", ".json", ".txt", ".md"))]
+        if not names:
+            return False
+        args = {"filename": names[0]}
+        observation = self._call_tool("read_file", args)
+        if observation.startswith("ERROR"):
+            return False
+        trace.append({"thought": "guardrail: read the data file before answering", "tool": "read_file",
+                      "args": args, "observation": observation[:2000]})
+        if verbose:
+            print(f"[Guardrail] model skipped reading data, so reading {names[0]} automatically")
+        messages += [{"role": "assistant", "content": json.dumps({"thought": "read the data", "action": "read_file", "args": args})},
+                     {"role": "user", "content": f"OBSERVATION: {observation}\nNow answer using only this data."}]
+        return True
+
     def _call_tool(self, name, args):
         name = {"open_file": "read_file", "read_csv": "read_file"}.get(name, name)
         if "placeholder" in json.dumps(args, default=str).lower():
-               return "ERROR: placeholder value. Use real values taken from earlier observations."
+            return "ERROR: placeholder value. Use real values taken from earlier observations."
         tool = self.tools.get(name)
         if tool is None:
             return f"ERROR: unknown tool '{name}'. Available: {', '.join(self.tools)}"
