@@ -57,11 +57,15 @@ class AgentExecutor:
             called = {t["tool"] for t in trace}
             wants_plan = any(w in query.lower() for w in ("plan", "schedule"))
             if ("final_answer" in data and wants_plan and "make_schedule" in self.tools
-                    and "make_schedule" not in called and sched_nudges < 2):
+                    and ("make_schedule" not in called or "{{" in str(data["final_answer"]))):
                 sched_nudges += 1
-                messages += [{"role": "assistant", "content": json.dumps(data)},
-                             {"role": "user", "content": "Rejected: for a plan you must call curriculum_lookup with ALL weak topics, then make_schedule with the topics ordered weakest first, and copy the schedule from its observation."}]
-                continue
+                if sched_nudges <= 2:
+                    messages += [{"role": "assistant", "content": json.dumps(data)},
+                                 {"role": "user", "content": "Rejected: for a plan you must call curriculum_lookup with ALL weak topics, then make_schedule with the topics ordered weakest first, and copy the real text from their observations. No template placeholders."}]
+                    continue
+                auto = self._auto_plan(trace, verbose)
+                if auto:
+                    return auto, trace
             if ("final_answer" in data and "check_code" in called and sol_nudges < 1
                     and "def " in str(data["final_answer"])):
                 sol_nudges += 1
@@ -101,6 +105,26 @@ class AgentExecutor:
         messages += [{"role": "assistant", "content": json.dumps({"thought": "read the data", "action": "read_file", "args": args})},
                      {"role": "user", "content": f"OBSERVATION: {observation}\nNow answer using only this data."}]
         return True
+
+    def _auto_plan(self, trace, verbose=False):
+        """Guardrail fallback: build the plan from real tool outputs when the model skips the tools."""
+        weak = next((t["observation"] for t in trace
+                     if t["tool"] == "weak_topics" and not t["observation"].startswith("ERROR")), None)
+        if weak is None:
+            return None
+        topics = [t.strip() for t in re.findall(r"^\d+\.\s*([^:\n]+):", weak, re.M)]
+        if not topics:
+            return None
+        joined = ",".join(topics)
+        notes = self._call_tool("curriculum_lookup", {"topics": joined})
+        schedule = self._call_tool("make_schedule", {"topics": joined, "hours_per_day": 2})
+        trace.append({"thought": "guardrail: model skipped curriculum_lookup, running it", "tool": "curriculum_lookup",
+                      "args": {"topics": joined}, "observation": notes[:2000]})
+        trace.append({"thought": "guardrail: model skipped make_schedule, running it", "tool": "make_schedule",
+                      "args": {"topics": joined, "hours_per_day": 2}, "observation": schedule[:2000]})
+        if verbose:
+            print("[Guardrail] model skipped curriculum_lookup/make_schedule, running them automatically")
+        return f"{weak}\n\nSTUDY NOTES\n{notes}\n\n{schedule}"
 
     def _call_tool(self, name, args):
         name = {"open_file": "read_file", "read_csv": "read_file"}.get(name, name)
