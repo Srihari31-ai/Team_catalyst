@@ -1,55 +1,75 @@
-# AgentX Starter
+# Team Catalyst: Adaptive Syllabus Coach & Debug Tutor
 
-Starter kit for the **AgentX Challenge 2026** (SRMIST Tiruchirappalli). A working ReAct agent (Thought → Action → Observation → Decision) in plain Python with three free-tier friendly pieces: Gemini or Groq as the model, local data tools, and web search. No credit card needed.
+AgentX Challenge 2026 (SRMIST Tiruchirappalli), Education & Pedagogy track.
 
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/himanshuraiml/agentx-starter/blob/main/notebooks/agentx_colab.ipynb)
+A ReAct agent (Thought -> Action -> Observation -> Decision) in plain Python that finds a student's weak topics from test scores, retrieves matching study notes, builds a 3-day remedial schedule, and gives practice problems with sandboxed code checking and hint-based feedback.
 
-## Run it (3 steps)
-```bash
-git clone https://github.com/himanshuraiml/agentx-starter.git && cd agentx-starter
-python3 -m venv venv && source venv/bin/activate      # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env                                   # add GEMINI_API_KEY and/or GROQ_API_KEY
-python main.py --dry-run "test"                        # works with no key: proves your setup
-python main.py "Which topics is student S1 weak in?"   # real agent run
-```
-Free keys: [Google AI Studio](https://aistudio.google.com/apikey) (Gemini) and [Groq](https://console.groq.com/keys). Lab PC without admin rights? Use the Colab badge above.
+Built on the AgentX starter kit. Free-tier friendly: Gemini or Groq as the model, no credit card needed.
 
-## Layout
-```
-main.py                 entry point + the judges' contract (--json)
-agent/core.py           the ReAct loop, step cap, repeat guard, error recovery
-agent/llm.py            Gemini / Groq wrapper with 429 retry
-agent/prompt_builder.py system prompt: set your theme's ROLE here
-tools/                  registry (__init__.py), calculator, data_query (list_files/read_file/sql_query), web_search
-config/__init__.py      models, MAX_ITERATIONS, data folder
-data/                   sample data; replace with your theme's dataset
-tests/test_agent.py     offline tests: python -m unittest discover tests
-notebooks/              Colab notebook
-```
+## What it does
 
-## What you build
-1. Pick one challenge from the [AgentX Challenge site](https://github.com/himanshuraiml/agentx-challenge) and put its dataset in `data/` (use the file names listed on the challenge card, e.g. `transactions.csv`).
-2. Set `ROLE` in `agent/prompt_builder.py`.
-3. Add your own tools: subclass `Tool` in `tools/`, register it in `tools/__init__.py`. Aim for **2+ real tools** that do real work (stats, scheduling, dosage maths, interaction lookup).
-4. Optional: add a frontend (Streamlit, Flask, anything) that calls `run_agent()` from `main.py`.
+1. **Reads weak topics** from `scores.csv` (topic/score tables and G1-G3 style grade columns).
+2. **Retrieves curriculum segments** (summary, key points, practice ideas) for those topics.
+3. **Builds a 3-day remedial schedule** (Learn, Practice, Test and review) with hours split by weakness.
+4. **Generates a practice problem**, runs the student's code in a sandbox, and explains failures with hints (no full solutions).
 
-## The judging contract (do not break this)
-Your repo is tested automatically on **hidden data and queries** before judges see your frontend.
-- `python main.py --json "<query>"` must print ONE JSON line to stdout: `{"answer": "...", "trace": [{"thought","tool","args","observation"}]}`. Logs go to stderr. (Already implemented here.)
-- Read data from the `AGENTX_DATA_DIR` folder (default `./data`) using your theme's file names. Never hardcode paths, values or answers.
-- Keys only from environment variables. **Never commit `.env` or a key.**
-- Keep `requirements.txt` and this README up to date; keep a loop cap (`config.MAX_ITERATIONS`).
-- If data is empty or a tool fails, the agent must still return an answer, not crash.
-- Repo must be **public** until judging ends.
+## Tools
 
-Scoring in short: Agentic architecture & autonomy 40, domain utility 30, code hygiene 20, demo 10. A plain prompt-forwarding wrapper is capped at 40%.
-
-## Troubleshooting
-| Problem | Fix |
+| Tool | What it does |
 |---|---|
-| `model_not_found` / 403 on Groq | Groq changes its free models. Set `GROQ_MODEL` in `.env` to one your key lists (see `.env.example`) |
-| `429` / rate limit | The LLM wrapper retries; add `time.sleep(2)` between steps, or set `AGENTX_PROVIDER=groq` |
-| Agent loops on one tool | Lower `MAX_ITERATIONS`; the repeat guard in `agent/core.py` forces an answer |
-| No admin / old Python | Use the Colab notebook |
-| `No API key found` | Fill `.env` (copy from `.env.example`) |
+| `weak_topics` | Ranks a student's topics weakest first; detects columns and score scale automatically |
+| `curriculum_lookup` | Returns notes and practice ideas for one or more topics |
+| `make_schedule` | Builds the 3-day schedule; the weakest topic gets the most time |
+| `generate_problem` | Picks a practice problem for a topic |
+| `check_code` | Runs student code against hidden tests in a separate process (5 s timeout, blocked file/system access, import allow-list) and returns pass/fail feedback |
+| `list_files`, `read_file`, `sql_query`, `calculator`, `web_search` | Starter data and utility tools |
+
+## Guardrails and error recovery (agent/core.py)
+
+- **Grounding guard:** a final answer is rejected until the agent has read real data with a tool (listing files does not count).
+- **Auto-recovery:** if the model still skips reading data, the loop reads the data file itself and continues.
+- **Plan enforcement:** a study-plan answer must come from `curriculum_lookup` and `make_schedule`; if the model skips them or returns template placeholders, the loop runs them and builds the plan from their real output.
+- **Tutor rule:** answers that include a full code solution after `check_code` are rejected, so the student gets hints only.
+- **Tool errors become observations:** unknown tool names, bad arguments and tool failures are returned to the model so it can recover. Common wrong names (`open_file`) are mapped to the right tool.
+- **Loop cap:** `MAX_ITERATIONS` in `config/__init__.py`, plus a repeat-call guard.
+
+## Run it
+
+```
+git clone https://github.com/Srihari31-ai/Team_catalyst.git
+cd Team_catalyst
+python -m venv venv
+venv\Scripts\activate            # macOS/Linux: source venv/bin/activate
+pip install -r requirements.txt
+copy .env.example .env           # macOS/Linux: cp .env.example .env
+```
+
+Add `GEMINI_API_KEY` and/or `GROQ_API_KEY` to `.env`. Keys come only from environment variables; never commit `.env`.
+
+```
+python main.py --dry-run "test"                                   # works with no key
+python main.py "Which topics is student S1 weak in?"
+python main.py "Make a study plan for student S1"
+python main.py "Check this code for recursion: def factorial(n): return n * factorial(n - 1)"
+python main.py --json "Which topics is student S1 weak in?"      # judges' contract
+```
+
+## Judging contract
+
+- `python main.py --json "<query>"` prints ONE JSON line: `{"answer": "...", "trace": [{"thought","tool","args","observation"}]}`. Logs go to stderr.
+- Data is read from `AGENTX_DATA_DIR` (default `./data`); nothing is hardcoded.
+- If data is empty or a tool fails, the agent still returns an answer.
+
+## Data
+
+`data/scores.csv` with columns `student,topic,score`. The tools also accept UCI Student Performance style files (`G1,G2,G3`).
+
+## Tests
+
+```
+python -m unittest discover tests
+```
+
+## Limits
+
+The code sandbox is a basic subprocess sandbox (timeout, import allow-list, blocked file and system access), not a hardened security boundary. The built-in curriculum covers common DSA topics; unknown topics get a generic plan.
